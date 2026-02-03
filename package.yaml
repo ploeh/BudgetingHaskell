@@ -1,6 +1,5 @@
 name:                budgeting
 version:             0.1.0.0
-github:              "githubuser/budgeting"
 license:             GPL-3.0
 author:              "Author name here"
 maintainer:          "example@example.com"
