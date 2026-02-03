@@ -1,9 +1,9 @@
 name:                budgeting
 version:             0.1.0.0
 license:             GPL-3.0
-author:              "Author name here"
+author:              "Mark Seemann"
 maintainer:          "example@example.com"
-copyright:           "2026 Author name here"
+copyright:           "2026 Mark Seemann"
 
 extra-source-files:
 - README.md
