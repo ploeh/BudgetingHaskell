@@ -2,7 +2,6 @@ name:                budgeting
 version:             0.1.0.0
 license:             GPL-3.0
 author:              "Mark Seemann"
-maintainer:          "example@example.com"
 copyright:           "2026 Mark Seemann"
 
 extra-source-files:
