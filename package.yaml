@@ -6,7 +6,6 @@ copyright:           "2026 Mark Seemann"
 
 extra-source-files:
 - README.md
-- CHANGELOG.md
 
 # Metadata used when publishing your package
 # synopsis:            Short description of your package
