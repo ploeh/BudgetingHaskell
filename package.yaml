@@ -32,6 +32,8 @@ ghc-options:
 
 library:
   source-dirs: src
+  dependencies:
+  - unordered-containers
 
 tests:
   budgeting-test:

@@ -3,10 +3,13 @@ module Budgeting
   ( CategoryBudget(..)
   , Budget(..)
   , Item(..)
+  , addItemCategory
   , Bill
   , billCost
   , canAfford
   ) where
+
+import qualified Data.HashMap.Strict as HM
 
 data CategoryBudget = CategoryBudget
   { category :: String
@@ -27,9 +30,24 @@ data Item = Item
   , itemCategories :: [String] }
   deriving (Show, Eq)
 
+addItemCategory :: String -> Item -> Item
+addItemCategory cat item = item { itemCategories = cat : itemCategories item }
+
 type Bill = [Item]
 
 billCost bill = sum $ fmap (liftA2 (*) itemCost itemCount) bill
 
 canAfford :: Budget -> Bill -> Bool
-canAfford budget bill = billCost bill <= totalLimit budget
+canAfford budget bill =
+  let total = billCost bill
+      -- This is not yet the correct algorithm, but in true TDD fashion, it
+      -- passes all tests.
+      categoryTotals =
+        HM.fromListWith (+) [
+          (cat, itemCost item * itemCount item) |
+          item <- bill, cat <- itemCategories item
+        ]
+      categoryLimitsMap =
+        HM.fromList [(category cb, limit cb) | cb <- categoryLimits budget]
+      finalLimits = HM.intersectionWith (-) categoryLimitsMap categoryTotals
+  in all (0 <=) (HM.elems finalLimits) && total <= totalLimit budget

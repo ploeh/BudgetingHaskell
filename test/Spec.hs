@@ -46,4 +46,19 @@ main = defaultMain
 
       let errMsg = "budget: " ++ show budget ++ ", bill: " ++ show bill
       return $ counterexample errMsg $ not actual
+    ,
+    testProperty "Bill unaffordable because of category limit" $ do
+      UncategorizedBill ubill <- arbitrary
+      let cost = billCost ubill
+      cat <- listOf1 arbitraryPrintableChar
+      Positive deficit <- arbitrary
+      let catBudget = CategoryBudget cat (cost - deficit)
+      let bill = fmap (addItemCategory cat) ubill
+      NonNegative surplus <- arbitrary
+      let budget = Budget (cost + surplus) [catBudget]
+
+      let actual = canAfford budget bill
+
+      let errMsg = "budget: " ++ show budget ++ ", bill: " ++ show bill
+      return $ counterexample errMsg $ not actual
   ]
