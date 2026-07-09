@@ -49,5 +49,6 @@ canAfford budget bill =
         ]
       categoryLimitsMap =
         HM.fromList [(category cb, limit cb) | cb <- categoryLimits budget]
-      finalLimits = HM.intersectionWith (-) categoryLimitsMap categoryTotals
-  in all (0 <=) (HM.elems finalLimits) && total <= totalLimit budget
+      finalDiffs =
+        HM.elems $ HM.intersectionWith (-) categoryLimitsMap categoryTotals
+  in (null finalDiffs || any (0 <=) finalDiffs) && total <= totalLimit budget

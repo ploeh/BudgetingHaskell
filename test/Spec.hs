@@ -61,4 +61,25 @@ main = defaultMain
 
       let errMsg = "budget: " ++ show budget ++ ", bill: " ++ show bill
       return $ counterexample errMsg $ not actual
+    ,
+    testProperty "Bill affordable due to secondary category limit" $ do
+      UncategorizedBill ubill <- arbitrary
+      let cost = billCost ubill
+      -- Category budget that forbids the bill:
+      catForbid <- listOf1 arbitraryPrintableChar
+      Positive catDeficit <- arbitrary
+      let catBudgetForbid = CategoryBudget catForbid (cost - catDeficit)
+      -- Category budget that allows the bill:
+      catAllow <- listOf1 arbitraryPrintableChar
+      Positive catSurplus <- arbitrary
+      let catBudgetAllow = CategoryBudget catAllow (cost + catSurplus)
+      -- Overall budget that allows the bill:
+      NonNegative surplus <- arbitrary
+      let budget = Budget (cost + surplus) [catBudgetForbid, catBudgetAllow]
+
+      let bill = addItemCategory catAllow . addItemCategory catForbid <$> ubill
+      let actual = canAfford budget bill
+
+      let errMsg = "budget: " ++ show budget ++ ", bill: " ++ show bill
+      return $ counterexample errMsg actual
   ]
