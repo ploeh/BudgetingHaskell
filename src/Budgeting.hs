@@ -32,4 +32,4 @@ type Bill = [Item]
 billCost bill = sum $ fmap (liftA2 (*) itemCost itemCount) bill
 
 canAfford :: Budget -> Bill -> Bool
-canAfford _ _ = True
+canAfford budget bill = billCost bill <= totalLimit budget
