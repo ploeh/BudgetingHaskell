@@ -2,8 +2,10 @@
 {-# OPTIONS_GHC -Wno-missing-export-lists #-}
 module Budgeting where
 
-import Data.Set (Set)
 import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as HashMap
+import Data.Set (Set)
+import qualified Data.Set as Set
 
 data Budget = Budget
   { totalLimit :: Int
@@ -21,7 +23,15 @@ data Item = Item
 
 type Bill = [Item]
 
-billCost bill = sum $ fmap (liftA2 (*) itemCost itemCount) bill
+billCost = sum . fmap (liftA2 (*) itemCost itemCount)
+
+categoryCost cat =
+  sum .
+  fmap (liftA2 (*) itemCost itemCount) .
+  filter (Set.member cat . itemCategories)
 
 canAfford :: Budget -> Bill -> Bool
-canAfford budget bill = billCost bill <= totalLimit budget
+canAfford budget bill =
+  let canAffordCategory cat limit = categoryCost cat bill <= limit
+  in billCost bill <= totalLimit budget &&
+      all (uncurry canAffordCategory) (HashMap.toList $ categoryLimits budget)

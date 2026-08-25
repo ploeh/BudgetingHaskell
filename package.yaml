@@ -47,6 +47,7 @@ tests:
     dependencies:
     - budgeting
     - containers
+    - unordered-containers
     - QuickCheck
     - test-framework
     - test-framework-quickcheck2
