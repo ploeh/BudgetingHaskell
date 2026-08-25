@@ -32,6 +32,9 @@ ghc-options:
 
 library:
   source-dirs: src
+  dependencies:
+  - containers
+  - unordered-containers
 
 tests:
   budgeting-test:
@@ -43,6 +46,7 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - budgeting
+    - containers
     - QuickCheck
     - test-framework
     - test-framework-quickcheck2
