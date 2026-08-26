@@ -83,4 +83,18 @@ main = defaultMain
       return $
         counterexample ("Category: \"" ++ cat ++ "\"") $
         expected === actual
+    ,
+    testProperty "Affordable bill never unaffordable by additional category" $
+      \(CategorizedBill bill) newCat (NonNegative newCatLimit) -> do
+      cat <- elements $ Set.toList $ Set.unions $ itemCategories <$> bill
+      return $
+        Set.notMember newCat (Set.unions $ itemCategories <$> bill) ==>
+        let affordableCatLimit = categoryCost cat bill
+            catLimits =
+              HashMap.fromList [(cat, affordableCatLimit), (newCat, newCatLimit)]
+            budget = Budget (billCost bill) catLimits
+
+            actual = canAfford budget (fmap (addItemCategory newCat) bill)
+
+        in counterexample ("Category: \"" ++ cat ++ "\"") actual
   ]

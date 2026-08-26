@@ -30,8 +30,12 @@ categoryCost cat =
   fmap (liftA2 (*) itemCost itemCount) .
   filter (Set.member cat . itemCategories)
 
+addItemCategory cat item =
+  item { itemCategories = Set.insert cat (itemCategories item) }
+
 canAfford :: Budget -> Bill -> Bool
 canAfford budget bill =
   let canAffordCategory cat limit = categoryCost cat bill <= limit
   in billCost bill <= totalLimit budget &&
-      all (uncurry canAffordCategory) (HashMap.toList $ categoryLimits budget)
+      (null (categoryLimits budget) ||
+        any (uncurry canAffordCategory) (HashMap.toList $ categoryLimits budget))
