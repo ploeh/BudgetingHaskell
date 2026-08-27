@@ -1,6 +1,8 @@
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ViewPatterns #-}
 import Budgeting
 import Data.Coerce (coerce)
+import Data.HashMap.Strict ((!))
 import qualified Data.HashMap.Strict as HashMap
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -61,6 +63,16 @@ instance Arbitrary CategorizedBill where
     filter (not . null) $
     shrinkList (coerce (shrink @CategorizedItem)) items
 
+genPartition :: [a] -> Gen [[a]]
+genPartition []     = pure []
+genPartition (x:xs) = do
+  p <- genPartition xs
+  k <- chooseInt (0, length p)
+  return $
+    case splitAt k p of
+      (before, block:after) -> before ++ ((x:block):after)
+      (before, []) -> [x] : before
+
 main :: IO ()
 main = defaultMain
   [ testProperty "Uncategorized bill is only determined by its cost" $
@@ -97,4 +109,24 @@ main = defaultMain
             actual = canAfford budget (fmap (addItemCategory newCat) bill)
 
         in counterexample ("Category: \"" ++ cat ++ "\"") actual
+    ,
+    testProperty "Conjunction of disjoint categories" $ \
+      (Set.toList . Set.fromList . getNonEmpty -> cats)
+      (Blind (InfiniteList (fmap getUncategorizedItem -> ub) _))
+      (Blind (InfiniteList (fmap getNonNegative -> catLims) _)) -> do
+        p <- fmap Set.fromList <$> genPartition cats
+        let bl = zipWith (\catSet item -> item { itemCategories = catSet }) p ub
+        let catLimits = HashMap.fromList $ zip cats catLims
+        let budget = Budget (billCost bl) catLimits
+
+        let actual = canAfford budget bl
+        
+        let excesses =
+              foldr (HashMap.insertWith (-) <*> (`categoryCost` bl)) catLimits cats
+        let expected =
+              all (any (\cat -> excesses ! cat <= 0) . itemCategories) bl
+        return $
+          counterexample ("Bill: " ++ show bl) $
+          counterexample ("Budget: " ++ show budget) $
+          expected === actual
   ]

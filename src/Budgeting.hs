@@ -35,7 +35,15 @@ addItemCategory cat item =
 
 canAfford :: Budget -> Bill -> Bool
 canAfford budget bill =
-  let canAffordCategory cat limit = categoryCost cat bill <= limit
+  let limits = categoryLimits budget
+      canAffordCategory cat limit = categoryCost cat bill <= limit
+      -- A category without a limit never makes an item unaffordable.
+      withinLimit cat =
+        maybe True (canAffordCategory cat) (HashMap.lookup cat limits)
+      -- An item is affordable when at least one of its categories still has
+      -- room, or when it carries no categories at all.
+      affordableItem item =
+        Set.null (itemCategories item) || any withinLimit (itemCategories item)
   in billCost bill <= totalLimit budget &&
-      (null (categoryLimits budget) ||
-        any (uncurry canAffordCategory) (HashMap.toList $ categoryLimits budget))
+     (null limits || any (uncurry canAffordCategory) (HashMap.toList limits)) &&
+     all affordableItem bill
