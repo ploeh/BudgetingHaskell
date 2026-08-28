@@ -4,7 +4,7 @@ module Budgeting where
 
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
-import Data.List (partition, sort, sortOn)
+import Data.List (partition, sortOn)
 import Data.Set (Set)
 import qualified Data.Set as Set
 
@@ -61,61 +61,21 @@ constrains limits item =
   where cats = itemCategories item
 
 {-Items that share no categories can't influence each other, so the bill is
-  split into independent groups, each paired with the categories it spans.-}
+  split into independent groups that can be considered one at a time.-}
 components = foldr addItem []
   where
-    addItem item groups =
-      let cats = itemCategories item
-          (touching, disjoint) = partition (not . Set.disjoint cats . fst) groups
-          merged =
-            ( Set.unions (cats : fmap fst touching)
-            , item : concatMap snd touching )
-      in merged : disjoint
+    addItem item groups = (item : concat touching) : disjoint
+      where (touching, disjoint) = partition (any (shares item)) groups
+    shares i j = not $ Set.disjoint (itemCategories i) (itemCategories j)
 
-chargeable limits (cats, items) =
-  fst $ charge Set.empty caps $ sortOn (negate . itemTotal) items
+{-Charges every item in full to one of its categories, trying the alternatives
+  in turn and backtracking when a choice turns out not to work. The most
+  expensive items are charged first, since they're the hardest to place.-}
+chargeable limits = charge limits . sortOn (negate . itemTotal)
   where
-    caps =
-      HashMap.fromList
-        [(c, HashMap.lookupDefault 0 c limits) | c <- Set.toList cats]
-
-{-Charges each item to one of its categories, backtracking when a choice turns
-  out not to work. Already refuted states are remembered, so that they aren't
-  explored again.-}
-charge failed _ [] = (True, failed)
-charge failed caps items@(item:rest)
-  | sum (itemTotal <$> items) > sum (HashMap.elems caps) = (False, failed)
-  | not (Set.null failed) && Set.member key failed = (False, failed)
-  | otherwise =
-      case safeCharge [] items of
-        Just (cat, i, others) -> charge failed (spend cat (itemTotal i)) others
-        Nothing -> tryCategories failed candidates
-  where
-    key =
-      ( sort [(itemTotal i, Set.toAscList (itemCategories i)) | i <- items]
-      , sortOn fst (HashMap.toList caps) )
-    cost = itemTotal item
-    remaining cat = HashMap.lookupDefault 0 cat caps
-    spend cat amount = HashMap.adjust (subtract amount) cat caps
-    loads =
-      HashMap.fromListWith (+)
-        [(cat, itemTotal i) | i <- items, cat <- Set.toList (itemCategories i)]
-    {-A category with room for every remaining item in it is always a safe
-      choice: any other charge could be moved there. Such a charge therefore
-      needs no backtracking.-}
-    safeCharge _ [] = Nothing
-    safeCharge seen (i:unseen) =
-      case filter isSafe (Set.toList (itemCategories i)) of
-        (cat:_) -> Just (cat, i, reverse seen ++ unseen)
-        []      -> safeCharge (i:seen) unseen
-      where isSafe cat = HashMap.lookupDefault 0 cat loads <= remaining cat
-    -- Prefer the tightest fit, leaving as much room as possible for later items.
-    candidates =
-      sortOn remaining $
-      filter ((cost <=) . remaining) $
-      Set.toList (itemCategories item)
-    tryCategories failed' [] = (False, Set.insert key failed')
-    tryCategories failed' (cat:cats') =
-      case charge failed' (spend cat cost) rest of
-        (True, failed'') -> (True, failed'')
-        (False, failed'') -> tryCategories failed'' cats'
+    charge _ [] = True
+    charge caps (item:items) =
+      or [ charge (HashMap.adjust (subtract cost) cat caps) items
+         | cat <- Set.toList (itemCategories item)
+         , cost <= HashMap.lookupDefault 0 cat caps ]
+      where cost = itemTotal item
