@@ -129,4 +129,22 @@ main = defaultMain
           counterexample ("Bill: " ++ show bl) $
           counterexample ("Budget: " ++ show budget) $
           expected === actual
+    ,
+    testProperty "Affordability preserved under wider choice" $ \
+      (CategorizedBill bill) (NonNegative slack) -> do
+        let cats = Set.unions $ itemCategories <$> bill
+        let catLimits =
+              (+ slack) <$>
+              foldr (HashMap.insertWith (+) <*> (`categoryCost` bill)) mempty cats
+        -- Affordable by construction:
+        let budget = Budget (billCost bill + slack) catLimits
+
+        cat <- elements $ Set.toList cats
+        let bill' = fmap (addItemCategory cat) bill
+        let actual = canAfford budget bill'
+
+        return $
+          counterexample ("Bill: " ++ show bill') $
+          counterexample ("Budget: " ++ show budget)
+          actual
   ]
