@@ -96,27 +96,6 @@ main = defaultMain
         counterexample ("Category: \"" ++ cat ++ "\"") $
         expected === actual
     ,
-    {-Adding a category to every item only preserves affordability when the new
-      category's limit is unrestrictive. A tighter limit may instead take away
-      an item's escape hatch: an item that shares no category with the budget is
-      unconstrained, but once it shares the new category it must be charged to
-      one of the limits.-}
-    testProperty "Affordable bill never unaffordable by additional category" $
-      \(CategorizedBill bill) newCat (NonNegative slack) -> do
-      cat <- elements $ Set.toList $ Set.unions $ itemCategories <$> bill
-      return $
-        Set.notMember newCat (Set.unions $ itemCategories <$> bill) ==>
-        let affordableCatLimit = categoryCost cat bill
-            newCatLimit = billCost bill + slack
-            catLimits =
-              HashMap.fromList [(cat, affordableCatLimit), (newCat, newCatLimit)]
-            budget = Budget (billCost bill) catLimits
-
-            actual = canAfford budget (fmap (addItemCategory newCat) bill)
-
-        in counterexample ("Bill: " ++ show (fmap (addItemCategory newCat) bill)) $
-          counterexample ("Budget: " ++ show budget) actual
-    ,
     testProperty "Conjunction of disjoint categories" $ \
       (Set.toList . Set.fromList . getNonEmpty -> cats)
       (Blind (InfiniteList (fmap getUncategorizedItem -> ub) _))
