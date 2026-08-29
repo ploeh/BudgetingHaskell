@@ -56,5 +56,5 @@ canAfford budget bill =
   item that belongs to an unbudgeted category (or to no category at all) can
   always be charged there, since no limit applies.-}
 constrains limits item =
-  not (Set.null cats) && all (`HashMap.member` limits) (Set.toList cats)
+  not (Set.null cats) && any (`HashMap.member` limits) (Set.toList cats)
   where cats = itemCategories item
