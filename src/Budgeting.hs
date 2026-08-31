@@ -5,7 +5,6 @@ module Budgeting where
 import Data.Foldable (toList)
 import Data.HashMap.Strict (HashMap, (!))
 import qualified Data.HashMap.Strict as HashMap
-import Data.List (partition)
 import Data.Set (Set)
 import qualified Data.Set as Set
 
@@ -41,11 +40,12 @@ canAfford :: Budget -> Bill -> Bool
 canAfford budget bill =
   billCost bill <= totalLimit budget &&
   all (fitsWithin maximum . pure) bill &&
-  all (fitsWithin sum) (components limits bill)
+  fitsWithin sum (filter charged bill)
   where
     limits = categoryLimits budget
-    {-A group of items is charged to the limits of the categories it is budgeted
-      in; a single item goes to one of them, a group shares them all. Without
+    charged = not . Set.null . budgetedCategories limits
+    {-Items are charged to the limits of the categories they are budgeted in; a
+      single item goes to one of them, and together they share them all. Without
       any such category no limit applies, and the group always fits.-}
     fitsWithin combine group = null caps || billCost group <= combine caps
       where
@@ -56,13 +56,3 @@ canAfford budget bill =
   other category of the item is unrestricted, so no limit applies there.-}
 budgetedCategories limits =
   Set.filter (`HashMap.member` limits) . itemCategories
-
-{-Items that share no categories can't compete for the same limits, so the bill
-  is split into independent groups that can be considered one at a time.-}
-components limits = foldr addItem []
-  where
-    addItem item groups = (item : concat touching) : disjoint
-      where (touching, disjoint) = partition (any (shares item)) groups
-    shares i j =
-      not $
-      Set.disjoint (budgetedCategories limits i) (budgetedCategories limits j)
