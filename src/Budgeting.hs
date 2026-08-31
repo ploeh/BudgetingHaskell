@@ -4,6 +4,7 @@ module Budgeting where
 
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
+import Data.List (partition)
 import Data.Set (Set)
 import qualified Data.Set as Set
 
@@ -37,24 +38,40 @@ addItemCategory cat item =
 
 {-A bill is affordable when
   * its total cost stays within the total limit,
-  * at least one budgeted category stays within its limit, so that spending
-    outside the budgeted categories is still defensible, and
-  * every item that has only budgeted categories fits within one of them.-}
+  * every item that has budgeted categories fits within one of them, and
+  * items that compete for the same categories fit within them together.-}
 canAfford :: Budget -> Bill -> Bool
 canAfford budget bill =
   billCost bill <= totalLimit budget &&
-  (HashMap.null limits || any withinLimit (HashMap.toList limits)) &&
-  all fits (filter (constrains limits) bill)
+  all fits constrained &&
+  all withinCapacity (components limits constrained)
   where
     limits = categoryLimits budget
-    withinLimit (cat, limit) = categoryCost cat bill <= limit
+    constrained = filter (constrains limits) bill
     fits item =
       any (\cat -> itemTotal item <= HashMap.lookupDefault 0 cat limits)
-          (Set.toList (itemCategories item))
+          (Set.toList (budgetedCategories limits item))
+    withinCapacity group =
+      billCost group <=
+      sum [ HashMap.lookupDefault 0 cat limits
+          | cat <- Set.toList (foldMap (budgetedCategories limits) group) ]
 
-{-An item only constrains a budget when all of its categories are budgeted. An
-  item that belongs to an unbudgeted category (or to no category at all) can
+{-An item can only be charged to a category the budget actually limits. Any
+  other category of the item is unrestricted, so no limit applies there.-}
+budgetedCategories limits =
+  Set.filter (`HashMap.member` limits) . itemCategories
+
+{-An item only constrains a budget when it shares a category with it. An item
+  that belongs only to unbudgeted categories (or to no category at all) can
   always be charged there, since no limit applies.-}
-constrains limits item =
-  not (Set.null cats) && any (`HashMap.member` limits) (Set.toList cats)
-  where cats = itemCategories item
+constrains limits = not . Set.null . budgetedCategories limits
+
+{-Items that share no categories can't compete for the same limits, so the bill
+  is split into independent groups that can be considered one at a time.-}
+components limits = foldr addItem []
+  where
+    addItem item groups = (item : concat touching) : disjoint
+      where (touching, disjoint) = partition (any (shares item)) groups
+    shares i j =
+      not $
+      Set.disjoint (budgetedCategories limits i) (budgetedCategories limits j)

@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE TupleSections #-}
 import Budgeting
 import Data.Coerce (coerce)
 import Data.HashMap.Strict ((!))
@@ -73,6 +74,39 @@ genPartition (x:xs) = do
       (before, block:after) -> before ++ ((x:block):after)
       (before, []) -> [x] : before
 
+{-Generates a random cut of a non-empty list into two sets, the first of which
+  is guaranteed to be non-empty. -}
+genCut :: Ord a => NonEmptyList a -> Gen ([a], [a])
+genCut (NonEmpty xs) = do
+  let s = Set.toList $ Set.fromList xs
+  k <- chooseInt (1, length s)
+  let (a, b) = splitAt k s
+  return (a, b)
+
+genNonEmptySubsetOf :: Ord a => [a] -> Gen (Set a)
+genNonEmptySubsetOf xs = do
+  x <- elements xs
+  rest <- sublistOf xs
+  return $ Set.fromList (x : rest)
+
+{-Generates items confined to the given categories, each cheap enough to be
+  charged to one of its own categories, but together costing more than those
+  categories can hold.-}
+genConfinedItems :: [(String, Int)] -> Gen Bill
+genConfinedItems limits = go 0
+  where
+    capacity = sum (snd <$> limits)
+    go spent
+      | spent > capacity = return []
+      | otherwise = do
+          cats <- genNonEmptySubsetOf (fst <$> limits)
+          let headroom =
+                maximum [ limit | (cat, limit) <- limits, Set.member cat cats ]
+          count <- chooseInt (1, headroom)
+          cost <- chooseInt (1, headroom `div` count)
+          let item = Item cost count cats
+          (item :) <$> go (spent + itemTotal item)
+
 main :: IO ()
 main = defaultMain
   [ testProperty "Uncategorized bill is only determined by its cost" $
@@ -133,4 +167,31 @@ main = defaultMain
           counterexample ("Bill: " ++ show bill') $
           counterexample ("Budget: " ++ show budget)
           actual
+    ,
+    {-Items whose categories all lie within a set of budgeted categories can't
+      be charged anywhere else, so their entire cost must fit within that set.
+      When the set's limits don't add up to that cost, no assignment of items to
+      categories can succeed, however the choices are made. Only the necessary
+      direction holds: since an item's cost is charged to a single category,
+      enough capacity in total doesn't imply the items can be distributed.-}
+    testProperty "Underfunded category set makes bill unaffordable" $ \
+      allCats -> do
+        (confinedCats, spareCats) <- genCut allCats
+        confinedLimits <-
+          vectorOf (length confinedCats) (getPositive <$> arbitrary)
+        let confined = zip confinedCats confinedLimits
+        -- Underfunded by construction:
+        bill <- genConfinedItems confined
+        -- The total limit and the categories that the bill doesn't touch are
+        -- generous:
+        let catLimits =
+              HashMap.fromList $ confined ++ ((, billCost bill) <$> spareCats)
+        let budget = Budget (billCost bill) catLimits
+
+        let actual = canAfford budget bill
+
+        return $
+          counterexample ("Bill: " ++ show bill) $
+          counterexample ("Budget: " ++ show budget) $
+          not actual
   ]
