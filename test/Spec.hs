@@ -89,17 +89,55 @@ genNonEmptySubsetOf xs = do
   rest <- sublistOf xs
   return $ Set.fromList (x : rest)
 
-{-Generates a non-empty bill whose items are confined to the given categories,
-  with small costs so that limits are sometimes met and sometimes exceeded.-}
-genBillOver :: [String] -> Gen Bill
-genBillOver cats = listOf1 $ do
-  cost <- chooseInt (1, 4)
-  count <- chooseInt (1, 2)
-  Item cost count <$> genNonEmptySubsetOf cats
+newtype SmallItem = SmallItem { getSmallItem :: Item } deriving (Show, Eq)
 
-genLimitsFor :: [String] -> Gen (HashMap.HashMap String Int)
-genLimitsFor cats =
-  HashMap.fromList . zip cats <$> vectorOf (length cats) (chooseInt (1, 6))
+instance Arbitrary SmallItem where
+  arbitrary = do
+    cost <- chooseInt (1, 4)
+    count <- chooseInt (1, 2)
+    cats <- genNonEmptySubsetOf ["a", "b", "c"]
+    return $ SmallItem $ Item cost count cats
+  shrink (SmallItem (Item cost count cats)) =
+    [ SmallItem $ Item cost' count' cats'
+    | (cost', count', cats') <- shrink (cost, count, cats)
+    , cost' > 0
+    , count' > 0
+    , not (Set.null cats')
+    ]
+
+{-A bill together with limits for exactly the categories it uses. Categories are
+  drawn from a small alphabet, so that items compete for the same limits.-}
+data BudgetedBill = BudgetedBill [SmallItem] [Positive Int] deriving (Show, Eq)
+
+instance Arbitrary BudgetedBill where
+  arbitrary =
+    BudgetedBill
+      <$> scale (min 5) (listOf1 arbitrary)
+      <*> listOf1 (Positive <$> chooseInt (1, 6))
+  shrink (BudgetedBill items limits) =
+    [ BudgetedBill items' limits'
+    | (items', limits') <- shrink (items, limits)
+    , not (null items')
+    , not (null limits')
+    ]
+
+billOf :: BudgetedBill -> Bill
+billOf (BudgetedBill items _) = getSmallItem <$> items
+
+{-Spreads the limits over the categories the bill actually uses, so that every
+  such category is budgeted however the bill shrinks.-}
+limitsOf :: BudgetedBill -> HashMap.HashMap String Int
+limitsOf bill@(BudgetedBill _ limits) =
+  HashMap.fromList $ zip cats $ cycle $ getPositive <$> limits
+  where cats = Set.toAscList $ Set.unions $ itemCategories <$> billOf bill
+
+{-Renames every category, so that two budgeted bills share none.-}
+prefixed :: Char -> BudgetedBill -> (Bill, HashMap.HashMap String Int)
+prefixed c bill =
+  ( rename <$> billOf bill
+  , HashMap.fromList [ (c : cat, l) | (cat, l) <- HashMap.toList (limitsOf bill) ]
+  )
+  where rename i = i { itemCategories = Set.map (c :) (itemCategories i) }
 
 {-Generates items confined to the given categories, each cheap enough to be
   charged to one of its own categories, but together costing more than those
@@ -213,27 +251,21 @@ main = defaultMain
       able together exactly when each of them is affordable on its own. Slack in
       one part's categories can't pay for a shortfall in the other's.-}
     testProperty "Affordability of independent bills is conjunctive" $ \
-      (getNonEmpty -> catsLeft') (getNonEmpty -> catsRight') -> do
-        -- Prefixes keep the two sets of categories apart:
-        let catsLeft = ('l' :) <$> catsLeft'
-        let catsRight = ('r' :) <$> catsRight'
-        billLeft <- genBillOver catsLeft
-        billRight <- genBillOver catsRight
-        limitsLeft <- genLimitsFor catsLeft
-        limitsRight <- genLimitsFor catsRight
-        -- Total limits are generous, leaving the categories to decide:
-        let budgetLeft = Budget (billCost billLeft) limitsLeft
-        let budgetRight = Budget (billCost billRight) limitsRight
-        let budget =
+      left right ->
+        let (billLeft, limitsLeft) = prefixed 'l' left
+            (billRight, limitsRight) = prefixed 'r' right
+            -- Total limits are generous, leaving the categories to decide:
+            budgetLeft = Budget (billCost billLeft) limitsLeft
+            budgetRight = Budget (billCost billRight) limitsRight
+            budget =
               Budget (billCost (billLeft ++ billRight))
                      (limitsLeft <> limitsRight)
 
-        let actual = canAfford budget (billLeft ++ billRight)
+            actual = canAfford budget (billLeft ++ billRight)
 
-        let expected =
+            expected =
               canAfford budgetLeft billLeft && canAfford budgetRight billRight
-        return $
-          counterexample ("Bill: " ++ show (billLeft ++ billRight)) $
-          counterexample ("Budget: " ++ show budget) $
-          expected === actual
+        in counterexample ("Bill: " ++ show (billLeft ++ billRight)) $
+           counterexample ("Budget: " ++ show budget) $
+           expected === actual
   ]
