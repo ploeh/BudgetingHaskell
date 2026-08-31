@@ -3,7 +3,7 @@
 {-# LANGUAGE TupleSections #-}
 import Budgeting
 import Data.Coerce (coerce)
-import Data.HashMap.Strict ((!))
+import Data.HashMap.Strict (HashMap, (!))
 import qualified Data.HashMap.Strict as HashMap
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -107,13 +107,13 @@ instance Arbitrary SmallItem where
 
 {-A bill together with limits for exactly the categories it uses. Categories are
   drawn from a small alphabet, so that items compete for the same limits.-}
-data BudgetedBill = BudgetedBill [SmallItem] [Positive Int] deriving (Show, Eq)
+data BudgetedBill = BudgetedBill [SmallItem] [Int] deriving (Show, Eq)
 
 instance Arbitrary BudgetedBill where
   arbitrary =
     BudgetedBill
       <$> scale (min 5) (listOf1 arbitrary)
-      <*> listOf1 (Positive <$> chooseInt (1, 6))
+      <*> listOf1 (chooseInt (1, 6))
   shrink (BudgetedBill items limits) =
     [ BudgetedBill items' limits'
     | (items', limits') <- shrink (items, limits)
@@ -126,13 +126,13 @@ billOf (BudgetedBill items _) = getSmallItem <$> items
 
 {-Spreads the limits over the categories the bill actually uses, so that every
   such category is budgeted however the bill shrinks.-}
-limitsOf :: BudgetedBill -> HashMap.HashMap String Int
+limitsOf :: BudgetedBill -> HashMap String Int
 limitsOf bill@(BudgetedBill _ limits) =
-  HashMap.fromList $ zip cats $ cycle $ getPositive <$> limits
+  HashMap.fromList $ zip cats $ cycle limits
   where cats = Set.toAscList $ Set.unions $ itemCategories <$> billOf bill
 
 {-Renames every category, so that two budgeted bills share none.-}
-prefixed :: Char -> BudgetedBill -> (Bill, HashMap.HashMap String Int)
+prefixed :: Char -> BudgetedBill -> (Bill, HashMap String Int)
 prefixed c bill =
   ( rename <$> billOf bill
   , HashMap.fromList [ (c : cat, l) | (cat, l) <- HashMap.toList (limitsOf bill) ]
