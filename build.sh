@@ -1,2 +1,2 @@
 #!/bin/bash
-stack test
+stack build

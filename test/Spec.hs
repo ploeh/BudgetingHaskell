@@ -89,6 +89,18 @@ genNonEmptySubsetOf xs = do
   rest <- sublistOf xs
   return $ Set.fromList (x : rest)
 
+{-Generates a non-empty bill whose items are confined to the given categories,
+  with small costs so that limits are sometimes met and sometimes exceeded.-}
+genBillOver :: [String] -> Gen Bill
+genBillOver cats = listOf1 $ do
+  cost <- chooseInt (1, 4)
+  count <- chooseInt (1, 2)
+  Item cost count <$> genNonEmptySubsetOf cats
+
+genLimitsFor :: [String] -> Gen (HashMap.HashMap String Int)
+genLimitsFor cats =
+  HashMap.fromList . zip cats <$> vectorOf (length cats) (chooseInt (1, 6))
+
 {-Generates items confined to the given categories, each cheap enough to be
   charged to one of its own categories, but together costing more than those
   categories can hold.-}
@@ -194,4 +206,34 @@ main = defaultMain
           counterexample ("Bill: " ++ show bill) $
           counterexample ("Budget: " ++ show budget) $
           not actual
+    ,
+    {-Items drawn from disjoint sets of categories never compete for the same
+      limits, so neither part of such a bill can influence the other. Each part
+      is charged only to its own categories, which means the parts are afford-
+      able together exactly when each of them is affordable on its own. Slack in
+      one part's categories can't pay for a shortfall in the other's.-}
+    testProperty "Affordability of independent bills is conjunctive" $ \
+      (getNonEmpty -> catsLeft') (getNonEmpty -> catsRight') -> do
+        -- Prefixes keep the two sets of categories apart:
+        let catsLeft = ('l' :) <$> catsLeft'
+        let catsRight = ('r' :) <$> catsRight'
+        billLeft <- genBillOver catsLeft
+        billRight <- genBillOver catsRight
+        limitsLeft <- genLimitsFor catsLeft
+        limitsRight <- genLimitsFor catsRight
+        -- Total limits are generous, leaving the categories to decide:
+        let budgetLeft = Budget (billCost billLeft) limitsLeft
+        let budgetRight = Budget (billCost billRight) limitsRight
+        let budget =
+              Budget (billCost (billLeft ++ billRight))
+                     (limitsLeft <> limitsRight)
+
+        let actual = canAfford budget (billLeft ++ billRight)
+
+        let expected =
+              canAfford budgetLeft billLeft && canAfford budgetRight billRight
+        return $
+          counterexample ("Bill: " ++ show (billLeft ++ billRight)) $
+          counterexample ("Budget: " ++ show budget) $
+          expected === actual
   ]
