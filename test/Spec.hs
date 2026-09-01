@@ -89,53 +89,66 @@ genNonEmptySubsetOf xs = do
   rest <- sublistOf xs
   return $ Set.fromList (x : rest)
 
-newtype SmallItem = SmallItem { getSmallItem :: Item } deriving (Show, Eq)
-
-instance Arbitrary SmallItem where
-  arbitrary = do
-    cost <- chooseInt (1, 4)
-    count <- chooseInt (1, 2)
-    cats <- genNonEmptySubsetOf ["a", "b", "c"]
-    return $ SmallItem $ Item cost count cats
-  shrink (SmallItem (Item cost count cats)) =
-    [ SmallItem $ Item cost' count' cats'
-    | (cost', count', cats') <- shrink (cost, count, cats)
-    , cost' > 0
-    , count' > 0
-    , not (Set.null cats')
-    ]
-
-{-A bill together with limits for exactly the categories it uses. Categories are
-  drawn from a small alphabet, so that items compete for the same limits.-}
-data BudgetedBill = BudgetedBill [SmallItem] [Int] deriving (Show, Eq)
+{-A bill whose items compete for a shared pool of categories, together with a
+  limit for each category the bill charges to. The limits are derived from what
+  the bill actually charges, then uniformly tightened or loosened, so that a
+  budget is about as likely to suffice as not, whatever the size of the bill or
+  the scale of its costs.-}
+data BudgetedBill = BudgetedBill Bill (HashMap String Int) deriving (Show, Eq)
 
 instance Arbitrary BudgetedBill where
-  arbitrary =
-    BudgetedBill
-      <$> scale (min 5) (listOf1 arbitrary)
-      <*> listOf1 (chooseInt (1, 6))
+  arbitrary = do
+    pool <- Set.toList . Set.fromList . getNonEmpty <$> arbitrary
+    items <- listOf1 $ do
+      Positive cost <- arbitrary
+      Positive count <- arbitrary
+      Item cost count <$> genNonEmptySubsetOf pool
+    -- What the bill charges to each category, when each item picks just one:
+    charges <- traverse (elements . Set.toList . itemCategories) items
+    let loads = HashMap.fromListWith (+) $ zip charges (itemTotal <$> items)
+    slack <- chooseInt (negate $ maximum loads, maximum loads)
+    return $ BudgetedBill items (max 0 . (+ slack) <$> loads)
   shrink (BudgetedBill items limits) =
-    [ BudgetedBill items' limits'
-    | (items', limits') <- shrink (items, limits)
-    , not (null items')
-    , not (null limits')
-    ]
+    [ relabel (BudgetedBill items limits) | not (canonical items) ] ++
+    [ BudgetedBill items' (HashMap.filterWithKey (\cat _ -> Set.member cat (used items')) limits)
+    | items' <- shrinkList shrinkItem items, not (null items') ] ++
+    [ BudgetedBill items (HashMap.insert cat limit' limits)
+    | (cat, limit) <- HashMap.toList limits, limit' <- shrink limit, limit' >= 0 ]
+    where
+      {-Category names are shrunk by renaming them throughout, since renaming
+        them only within the items would leave them without a limit.-}
+      canonical bill = cats == Set.fromList (take (Set.size cats) names)
+        where cats = used bill
+      shrinkItem (Item cost count cats) =
+        [ Item cost' count' cats
+        | (Positive cost', Positive count') <- shrink (Positive cost, Positive count)
+        ] ++
+        [ Item cost count cats' | cats' <- shrinkSet cats, not (Set.null cats') ]
+      shrinkSet = fmap Set.fromList . shrinkList (const []) . Set.toList
 
-billOf :: BudgetedBill -> Bill
-billOf (BudgetedBill items _) = getSmallItem <$> items
+used :: Bill -> Set String
+used = Set.unions . fmap itemCategories
 
-{-Spreads the limits over the categories the bill actually uses, so that every
-  such category is budgeted however the bill shrinks.-}
-limitsOf :: BudgetedBill -> HashMap String Int
-limitsOf bill@(BudgetedBill _ limits) =
-  HashMap.fromList $ zip cats $ cycle limits
-  where cats = Set.toAscList $ Set.unions $ itemCategories <$> billOf bill
+{-Short, readable category names.-}
+names :: [String]
+names = [ replicate n c | n <- [1 ..], c <- ['a' .. 'z'] ]
+
+{-Renames the categories of a bill to the first of the short names, keeping the
+  budget's limits in step so that every category charged to is still budgeted.-}
+relabel :: BudgetedBill -> BudgetedBill
+relabel (BudgetedBill items limits) =
+  BudgetedBill (rename <$> items) (HashMap.fromList (relabelled <$> HashMap.toList limits))
+  where
+    relabelled (cat, limit) = (canonically cat, limit)
+    canonically cat = HashMap.lookupDefault cat cat renaming
+    renaming = HashMap.fromList $ zip (Set.toAscList (used items)) names
+    rename i = i { itemCategories = Set.map canonically (itemCategories i) }
 
 {-Renames every category, so that two budgeted bills share none.-}
 prefixed :: Char -> BudgetedBill -> (Bill, HashMap String Int)
-prefixed c bill =
-  ( rename <$> billOf bill
-  , HashMap.fromList [ (c : cat, l) | (cat, l) <- HashMap.toList (limitsOf bill) ]
+prefixed c (BudgetedBill items limits) =
+  ( rename <$> items
+  , HashMap.fromList [ (c : cat, l) | (cat, l) <- HashMap.toList limits ]
   )
   where rename i = i { itemCategories = Set.map (c :) (itemCategories i) }
 
