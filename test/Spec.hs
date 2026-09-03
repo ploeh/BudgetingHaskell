@@ -1,5 +1,6 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE NumericUnderscores #-}
 import Budgeting
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -33,6 +34,15 @@ instance (Arbitrary a, Ord a) => Arbitrary (AnyBudget a) where
     | (Positive tl', cls') <-
         shrink (Positive tl, Map.toList (fmap Positive cls))
     ]
+
+-- A type to define a small, closed universe of categories for testing.
+data Cat10 =
+  C0 | C1 | C2 | C3 | C4 | C5 | C6 | C7 | C8 | C9
+  deriving (Show, Eq, Ord, Enum, Bounded)
+
+instance Arbitrary Cat10 where
+  arbitrary = chooseEnum (minBound, maxBound)
+  shrink = shrinkBoundedEnum
 
 main :: IO ()
 main = defaultMain
@@ -79,4 +89,38 @@ main = defaultMain
 
         return $ counterexample ("Modified bill: " ++ show bill') $
                  not (canAfford budget bill) || actual
+    ,
+    testProperty "Monotonocity: Adding category to affordable bill never makes it unaffordable" $ \
+      (Positive totLim)
+      (fmap getPositive . Map.fromList . getNonEmpty -> cls)
+      (fmap getItem . getNonEmpty -> bill :: Bill Cat10)
+      newCat
+      (Positive lim) ->
+      withMaxSuccess 10_000 $
+      -- Filter out the case where the new category is already present in the
+      -- budget, since that would not be a valid test of adding a NEW limit:
+      not (Map.member newCat cls) ==>
+      let budget = Budget totLim cls
+          -- Only keep those items that are already covered by the existing
+          -- budget categories. If these are already affordable, then adding a
+          -- new category limit should not make them unaffordable:
+          existingCats = Set.fromList $ Map.keys (categoryLimits budget)
+          isAlreadyCovered =
+            not . Set.null . Set.intersection existingCats . itemCategories
+          bill' = filter isAlreadyCovered bill
+          -- Now add the new category limit to the budget:
+          budget' = budget
+            { categoryLimits =
+                Map.insert newCat lim (categoryLimits budget) }
+
+          actual = canAfford budget' bill'
+
+      in -- cover 90 (canAfford budget bill') "Original budget affordable" $
+         -- cover 90 (not $ null bill') "Bill has items" $
+         -- cover 90 (any (\i -> Set.size (itemCategories i) > 1) bill')
+         --   "Items have more than one category" $
+         -- checkCoverage $
+         counterexample ("Modified budget: " ++ show budget') $
+         counterexample ("Modified bill: " ++ show bill') $
+         not (canAfford budget bill') || actual
   ]

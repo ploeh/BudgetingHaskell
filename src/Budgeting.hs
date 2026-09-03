@@ -35,3 +35,7 @@ canAfford budget bill =
   all
     (\(cat, lim) -> categoryCost cat bill <= lim)
     (Map.toList $ categoryLimits budget)
+  -- (null (categoryLimits budget) ||
+  --  any
+  --   (\(cat, lim) -> categoryCost cat bill <= lim)
+  --   (Map.toList $ categoryLimits budget))
