@@ -84,14 +84,10 @@ main = defaultMain
     ,
     testProperty "Monotonocity: Adding category to affordable bill never makes it unaffordable" $ \
       (Positive totLim)
-      (fmap getPositive . Map.fromList . getNonEmpty -> cls)
-      (fmap getItem . getNonEmpty -> bill :: Bill Word8)
-      newCat
+      (Map.mapKeys Just . fmap getPositive . Map.fromList . getNonEmpty -> cls)
+      (fmap getItem . getNonEmpty -> bill :: Bill (Maybe Word8))
       (Positive lim) ->
       withMaxSuccess 10_000 $
-      -- Filter out the case where the new category is already present in the
-      -- budget, since that would not be a valid test of adding a NEW limit:
-      not (Map.member newCat cls) ==>
       let -- Only keep those items that are already covered by the existing
           -- budget categories. If these are already affordable, then adding a
           -- new category limit should not make them unaffordable:
@@ -100,11 +96,11 @@ main = defaultMain
             not . Set.null . Set.intersection existingCats . itemCategories
           bill' = filter isAlreadyCovered bill
           -- Now add the new category limit to the budget:
-          budget = Budget totLim (Map.insert newCat lim cls)
+          budget = Budget totLim (Map.insert Nothing lim cls)
 
           actual = canAfford budget bill'
 
       in counterexample ("Modified budget: " ++ show budget) $
          counterexample ("Modified bill: " ++ show bill') $
-         not (canAfford (Budget totLim cls) bill') || actual
+         not (canAfford (Budget totLim  cls) bill') || actual
   ]
