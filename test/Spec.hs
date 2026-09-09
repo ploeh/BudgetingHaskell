@@ -1,6 +1,5 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE NumericUnderscores #-}
 import Budgeting
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -83,24 +82,38 @@ main = defaultMain
                  not (canAfford budget bill) || actual
     ,
     testProperty "Monotonocity: Adding category to affordable bill never makes it unaffordable" $ \
-      (Positive totLim)
-      (Map.mapKeys Just . fmap getPositive . Map.fromList . getNonEmpty -> cls)
       (fmap getItem . getNonEmpty -> bill :: Bill (Maybe Word8))
       (Positive lim) ->
-      withMaxSuccess 10_000 $
       let -- Only keep those items that are already covered by the existing
-          -- budget categories. If these are already affordable, then adding a
-          -- new category limit should not make them unaffordable:
-          existingCats = Set.fromList $ Map.keys cls
+          -- budget categories, except Nothing, which is going to be the new
+          -- category.
+          -- If these items are already affordable, then adding a  new category
+          -- limit should not make them unaffordable.
+          -- This step most importantly removes any items that are ONLY in the
+          -- new category, because those items could become unaffordable if the
+          -- new category limit is too low.
+          existingCats =
+            Set.delete Nothing $ Set.unions $ fmap itemCategories bill
           isAlreadyCovered =
             not . Set.null . Set.intersection existingCats . itemCategories
           bill' = filter isAlreadyCovered bill
+          -- Now construct the first budget so that the bill is affordable:
+          categoryCosts =
+            Map.delete Nothing $
+            foldr (Map.insert <*> (`categoryCost` bill')) mempty $
+            Set.unions $
+            fmap itemCategories bill'
+          budget1 = Budget (billCost bill') categoryCosts
+
           -- Now add the new category limit to the budget:
-          budget = Budget totLim (Map.insert Nothing lim cls)
+          budget2 =
+            budget1 {
+              categoryLimits = Map.insert Nothing lim (categoryLimits budget1)
+            }
+          actual = canAfford budget2 bill'
 
-          actual = canAfford budget bill'
-
-      in counterexample ("Modified budget: " ++ show budget) $
-         counterexample ("Modified bill: " ++ show bill') $
-         not (canAfford (Budget totLim  cls) bill') || actual
+      in canAfford budget1 bill' ==>
+         counterexample ("Modified budget: " ++ show budget2) $
+         counterexample ("Modified bill: " ++ show bill')
+         actual
   ]
