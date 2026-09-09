@@ -32,7 +32,7 @@ categoryCost cat =
 
 canAfford budget bill =
   billCost bill <= totalLimit budget &&
-  (null (categoryLimits budget) ||
-   any
-    (\(cat, lim) -> categoryCost cat bill <= lim)
-    (Map.toList $ categoryLimits budget))
+  all
+    (\(cat, lim) ->
+      billCost (filter ((== Set.singleton cat) . itemCategories) bill) <= lim)
+    (Map.toList $ categoryLimits budget)

@@ -1,6 +1,7 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 import Budgeting
+import Data.Foldable (foldrM)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
@@ -116,4 +117,23 @@ main = defaultMain
          counterexample ("Modified budget: " ++ show budget2) $
          counterexample ("Modified bill: " ++ show bill')
          actual
+    ,
+    testProperty "Valid assignment is affordable" $ \
+      (fmap getItem -> bill :: Bill Word8) ->
+      do
+        budget <- foldrM genAssignment (Budget 0 mempty) bill
+        let actual = canAfford budget bill
+        pure $ counterexample ("Generated budget: " ++ show budget) actual
   ]
+
+genAssignment :: Ord a => Item a -> Budget a -> Gen (Budget a)
+genAssignment (Item cost count cats) budget =
+  if null cats
+  then
+    pure $ budget { totalLimit = totalLimit budget + cost * count }
+  else do
+    cat <- elements (Set.toList cats)
+    pure $ budget {
+      totalLimit = totalLimit budget + cost * count,
+      categoryLimits =
+        Map.insertWith (+) cat (cost * count) (categoryLimits budget) }
