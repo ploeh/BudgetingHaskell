@@ -143,7 +143,8 @@ genAssignment (Item cost count cats) budget =
     pure $ budget { totalLimit = totalLimit budget + cost * count }
   else do
     cat <- elements (Set.toList cats)
+    NonNegative slack <- arbitrary
     pure $ budget {
       totalLimit = totalLimit budget + cost * count,
       categoryLimits =
-        Map.insertWith (+) cat (cost * count) (categoryLimits budget) }
+        Map.insertWith (+) cat (cost * count + slack) (categoryLimits budget) }
