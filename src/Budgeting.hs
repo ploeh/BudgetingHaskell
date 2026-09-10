@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -Wno-missing-export-lists #-}
 module Budgeting where
 
-import Data.Map.Strict (Map)
+import Data.Map.Strict (Map, (!))
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -40,7 +40,7 @@ canAfford budget bill =
     forcedItems =
       filter
         (liftA2 (&&) (not . Set.null) (`Set.isSubsetOf` Map.keysSet limits) .
-         itemCategories)
+          itemCategories)
         bill
     network = foldr addEdge Map.empty $
       [ (Source, ItemNode i, itemCost item * itemCount item)
@@ -56,13 +56,14 @@ addEdge (from, to, cap) =
   Map.insertWith (Map.unionWith (+)) from (Map.singleton to cap) .
   Map.insertWith (Map.unionWith (+)) to (Map.singleton from 0)
 
--- Ford-Fulkerson with breadth-first (shortest) augmenting paths.
+-- Ford-Fulkerson with breadth-first (shortest) augmenting paths, AKA
+-- Edmonds-Karp algorithm.
 maxFlow graph source sink = go graph 0
   where
     go residual flow = case augmentingPath residual of
       Nothing -> flow
       Just path ->
-        let bottleneck = minimum [residual Map.! from Map.! to | (from, to) <- path]
+        let bottleneck = minimum [residual ! from ! to | (from, to) <- path]
         in go (foldr (augment bottleneck) residual path) (flow + bottleneck)
 
     augment amount (from, to) =
@@ -85,4 +86,4 @@ maxFlow graph source sink = go graph 0
             parents' = foldr (`Map.insert` node) parents next
             pathTo to
               | to == source = []
-              | otherwise = let from = parents Map.! to in (from, to) : pathTo from
+              | otherwise = let from = parents ! to in (from, to) : pathTo from
