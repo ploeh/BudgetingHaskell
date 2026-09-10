@@ -124,6 +124,16 @@ main = defaultMain
         budget <- foldrM genAssignment (Budget 0 mempty) bill
         let actual = canAfford budget bill
         pure $ counterexample ("Generated budget: " ++ show budget) actual
+    ,
+    testProperty "Budget with zero category limits is never affordable" $ \
+      (fmap getItem . getNonEmpty -> bill :: Bill Word8) ->
+      let cats = Set.unions $ fmap itemCategories bill
+          budget = Budget (billCost bill) $ Map.fromSet (const 0) cats
+
+          actual = canAfford budget bill
+
+      in not (null cats) ==>
+         not actual
   ]
 
 genAssignment :: Ord a => Item a -> Budget a -> Gen (Budget a)
