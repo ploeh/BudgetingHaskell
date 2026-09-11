@@ -2,6 +2,7 @@
 {-# OPTIONS_GHC -Wno-missing-export-lists #-}
 module Budgeting where
 
+import Data.List (sortOn)
 import Data.Map.Strict (Map, (!))
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
@@ -23,67 +24,35 @@ data Item a = Item
 
 type Bill a = [Item a]
 
-billCost bill = sum $ fmap (liftA2 (*) itemCost itemCount) bill
+billCost bill = sum $ fmap itemTotal bill
 
 categoryCost cat =
-  sum .
-  fmap (liftA2 (*) itemCost itemCount) .
-  filter (Set.member cat . itemCategories)
-
-data Node a = Source | ItemNode Int | CatNode a | Sink deriving (Show, Eq, Ord)
+  sum . fmap itemTotal . filter (Set.member cat . itemCategories)
 
 canAfford budget bill =
   billCost bill <= totalLimit budget &&
-  maxFlow network Source Sink == billCost forcedItems
+  assign forcedItems limits
   where
     limits = categoryLimits budget
+    {-An item is only constrained by the budget's category limits if it has
+      categories, and all of them are limited. An item that belongs to an
+      unlimited category can always be charged to that category.-}
     forcedItems =
+      sortOn (negate . itemTotal) $
       filter
         (liftA2 (&&) (not . Set.null) (`Set.isSubsetOf` Map.keysSet limits) .
           itemCategories)
         bill
-    network = foldr addEdge Map.empty $
-      [ (Source, ItemNode i, itemCost item * itemCount item)
-      | (i, item) <- zip [0 ..] forcedItems
-      ] ++
-      [ (ItemNode i, CatNode cat, itemCost item * itemCount item)
-      | (i, item) <- zip [0 ..] forcedItems
-      , cat <- Set.toList (itemCategories item)
-      ] ++
-      [ (CatNode cat, Sink, lim) | (cat, lim) <- Map.toList limits ]
 
-addEdge (from, to, cap) =
-  Map.insertWith (Map.unionWith (+)) from (Map.singleton to cap) .
-  Map.insertWith (Map.unionWith (+)) to (Map.singleton from 0)
+    -- Each item must fit, in its entirety, within a single one of its
+    -- categories, so try every assignment until one of them works out.
+    assign [] _ = True
+    assign (item:rest) remaining =
+      or
+        [ assign rest (Map.adjust (subtract cost) cat remaining)
+        | cat <- Set.toList (itemCategories item)
+        , remaining ! cat >= cost
+        ]
+      where cost = itemTotal item
 
--- Ford-Fulkerson with breadth-first (shortest) augmenting paths, AKA
--- Edmonds-Karp algorithm.
-maxFlow graph source sink = go graph 0
-  where
-    go residual flow = case augmentingPath residual of
-      Nothing -> flow
-      Just path ->
-        let bottleneck = minimum [residual ! from ! to | (from, to) <- path]
-        in go (foldr (augment bottleneck) residual path) (flow + bottleneck)
-
-    augment amount (from, to) =
-      Map.adjust (Map.adjust (subtract amount) to) from .
-      Map.adjust (Map.adjust (+ amount) from) to
-
-    augmentingPath residual = search [source] (Map.singleton source source)
-      where
-        search [] _ = Nothing
-        search (node:queue) parents
-          | node == sink = Just (pathTo node)
-          | otherwise = search (queue ++ next) parents'
-          where
-            next =
-              [ to
-              | (to, cap) <- Map.toList $ Map.findWithDefault mempty node residual
-              , cap > 0
-              , not (Map.member to parents)
-              ]
-            parents' = foldr (`Map.insert` node) parents next
-            pathTo to
-              | to == source = []
-              | otherwise = let from = parents ! to in (from, to) : pathTo from
+itemTotal = liftA2 (*) itemCost itemCount

@@ -134,6 +134,22 @@ main = defaultMain
 
       in not (null cats) ==>
          not actual
+    ,
+    testProperty "An item that fits in no single category is unaffordable" $ \
+      (fmap getItem . getNonEmpty -> bill :: Bill Word8) ->
+      do
+        item <- elements bill
+        let cost = itemCost item * itemCount item
+            catLimits =
+              foldr (\cat acc -> Map.insert cat (cost - 1) acc) mempty $
+              itemCategories item
+
+            budget = Budget (billCost bill) catLimits
+            actual = canAfford budget bill
+
+        pure $
+          not (null $ itemCategories item) ==>
+          counterexample ("Budget: " ++ show budget) $ not actual
   ]
 
 genAssignment :: Ord a => Item a -> Budget a -> Gen (Budget a)
