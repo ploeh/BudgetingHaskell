@@ -24,6 +24,8 @@ data Item a = Item
 
 type Bill a = [Item a]
 
+itemTotal = liftA2 (*) itemCost itemCount
+
 billCost bill = sum $ fmap itemTotal bill
 
 categoryCost cat =
@@ -49,10 +51,8 @@ canAfford budget bill =
     assign [] _ = True
     assign (item:rest) remaining =
       or
-        [ assign rest (Map.adjust (subtract cost) cat remaining)
+        [ assign rest (Map.adjust (subtract $ itemTotal item) cat remaining)
         | cat <- Set.toList (itemCategories item)
-        , remaining ! cat >= cost
+        , remaining ! cat >= itemTotal item
         ]
-      where cost = itemTotal item
 
-itemTotal = liftA2 (*) itemCost itemCount
