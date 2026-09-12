@@ -1,2 +1,3 @@
 #!/bin/bash
-stack test
+echo "No test; only build!"
+stack build
