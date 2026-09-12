@@ -150,6 +150,26 @@ main = defaultMain
         pure $
           not (null $ itemCategories item) ==>
           counterexample ("Budget: " ++ show budget) $ not actual
+    ,
+    testProperty "Adding unbudgeted category never makes unaffordable bill affordable" $ \
+      (fmap getItem . getNonEmpty -> bill :: Bill String)
+      newCat ->
+        let existingCats = Set.unions $ itemCategories <$> bill
+            budget =
+              Budget (billCost bill) $
+              foldr (`Map.insert` 0) mempty existingCats
+            bill' =
+              [ i { itemCategories = Set.insert newCat $ itemCategories i }
+              | i <- bill
+              ]
+
+            actual = canAfford budget bill'
+        in
+          not (Set.member newCat existingCats) ==>
+          (not . all (null . itemCategories)) bill ==>
+          counterexample ("Budget: " ++ show budget) $
+          counterexample ("Bill: " ++ show bill') $
+          not actual
   ]
 
 genAssignment :: Ord a => Item a -> Budget a -> Gen (Budget a)

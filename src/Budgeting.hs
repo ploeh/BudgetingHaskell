@@ -36,15 +36,16 @@ canAfford budget bill =
   assign forcedItems limits
   where
     limits = categoryLimits budget
-    {-An item is only constrained by the budget's category limits if it has
-      categories, and all of them are limited. An item that belongs to an
-      unlimited category can always be charged to that category.-}
+    {-An item is only constrained if it has categories that are limited by the
+      budget. Any category not shared by the budget are considered irrelevant
+      and removed by keeping only the intersection.-}
     forcedItems =
       sortOn (negate . itemTotal) $
-      filter
-        (liftA2 (&&) (not . Set.null) (`Set.isSubsetOf` Map.keysSet limits) .
-          itemCategories)
-        bill
+      filter (not . Set.null . itemCategories)
+      [ i { itemCategories =
+              Set.intersection (itemCategories i) (Map.keysSet limits) }
+      | i <- bill
+      ]
 
     -- Each item must fit, in its entirety, within a single one of its
     -- categories, so try every assignment until one of them works out.
