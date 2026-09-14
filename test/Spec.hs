@@ -119,7 +119,7 @@ main = defaultMain
          actual
     ,
     testProperty "Valid assignment is affordable" $
-      mapSize (min 5) $ \
+      mapSize (min 10) $ \
       (fmap getItem -> bill :: Bill Word8) ->
       do
         budget <- foldrM genAssignment (Budget 0 mempty) bill
@@ -173,7 +173,7 @@ main = defaultMain
           not actual
     ,
     testProperty "Item count is distributive over category sets" $
-      mapSize (min 5) $ \
+      mapSize (min 10) $ \
       (fmap getItem -> bill :: Bill String) ->
       do
         let bill' = bill >>= (\i -> replicate (itemCount i) i { itemCount = 1 })

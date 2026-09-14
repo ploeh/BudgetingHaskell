@@ -33,7 +33,7 @@ categoryCost cat =
 
 canAfford budget bill =
   billCost bill <= totalLimit budget &&
-  assign explodedItems limits
+  assign (zip [0 :: Int ..] forcedItems) limits
   where
     limits = categoryLimits budget
     {-An item is only constrained if it has categories that are limited by the
@@ -46,18 +46,44 @@ canAfford budget bill =
               Set.intersection (itemCategories i) (Map.keysSet limits) }
       | i <- bill
       ]
-    {-Per one of the ROT13 spoilers, items may be distributed across multiple
-      categories, so we explode each item into multiple single-count items.-}
-    explodedItems =
-      forcedItems >>= (\i -> replicate (itemCount i) i { itemCount = 1 })
 
-    -- Each item must fit, in its entirety, within a single one of its
-    -- categories, so try every assignment until one of them works out.
-    assign [] _ = True
-    assign (item:rest) remaining =
-      or
-        [ assign rest (Map.adjust (subtract $ itemTotal item) cat remaining)
-        | cat <- Set.toList (itemCategories item)
-        , remaining ! cat >= itemTotal item
-        ]
+    assign items remaining = fst $ go items remaining Set.empty
+
+    {-Try every distribution of every item until one of them works out. Failed
+      (item, remaining limits) states are memoised, since different orders of
+      choices often lead to the same state.-}
+    go [] _ seen = (True, seen)
+    go ((i, item) : rest) remaining seen
+      | Set.member key seen = (False, seen)
+      | otherwise =
+          case tryAll (distributions item remaining) seen of
+            (False, seen') -> (False, Set.insert key seen')
+            success -> success
+      where
+        key = (i, remaining)
+        tryAll [] s = (False, s)
+        tryAll (remaining' : rest') s =
+          case go rest remaining' s of
+            (False, s') -> tryAll rest' s'
+            success -> success
+
+{-Per one of the ROT13 spoilers, the units of an item with a count may be
+  distributed across several categories. Since the units are interchangeable,
+  only the number of units per category matters, so enumerate those counts
+  rather than each unit's individual assignment.-}
+distributions (Item cost count categories) =
+  go (Set.toList categories) count
+  where
+    go [] n m = [m | n == 0]
+    -- The last category has to absorb whatever units are left.
+    go [cat] n m = [Map.insert cat (m ! cat - n * cost) m | m ! cat >= n * cost]
+    go (cat : cats) n m =
+      [ m'
+      | k <- [0 .. maxUnits (m ! cat)]
+      , m' <- go cats (n - k) (Map.insert cat (m ! cat - k * cost) m)
+      ]
+      where
+        maxUnits limit
+          | cost <= 0 = n
+          | otherwise = min n $ max 0 $ limit `div` cost
 
