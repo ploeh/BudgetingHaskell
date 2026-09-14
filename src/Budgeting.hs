@@ -33,7 +33,7 @@ categoryCost cat =
 
 canAfford budget bill =
   billCost bill <= totalLimit budget &&
-  assign forcedItems limits
+  assign explodedItems limits
   where
     limits = categoryLimits budget
     {-An item is only constrained if it has categories that are limited by the
@@ -46,6 +46,10 @@ canAfford budget bill =
               Set.intersection (itemCategories i) (Map.keysSet limits) }
       | i <- bill
       ]
+    {-Per one of the ROT13 spoilers, items may be distributed across multiple
+      categories, so we explode each item into multiple single-count items.-}
+    explodedItems =
+      forcedItems >>= (\i -> replicate (itemCount i) i { itemCount = 1 })
 
     -- Each item must fit, in its entirety, within a single one of its
     -- categories, so try every assignment until one of them works out.

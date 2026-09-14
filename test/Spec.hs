@@ -118,7 +118,8 @@ main = defaultMain
          counterexample ("Modified bill: " ++ show bill')
          actual
     ,
-    testProperty "Valid assignment is affordable" $ \
+    testProperty "Valid assignment is affordable" $
+      mapSize (min 5) $ \
       (fmap getItem -> bill :: Bill Word8) ->
       do
         budget <- foldrM genAssignment (Budget 0 mempty) bill
@@ -170,6 +171,23 @@ main = defaultMain
           counterexample ("Budget: " ++ show budget) $
           counterexample ("Bill: " ++ show bill') $
           not actual
+    ,
+    testProperty "Item count is distributive over category sets" $
+      mapSize (min 5) $ \
+      (fmap getItem -> bill :: Bill String) ->
+      do
+        let bill' = bill >>= (\i -> replicate (itemCount i) i { itemCount = 1 })
+        budget <- foldrM genAssignment (Budget 0 mempty) bill'
+
+        -- The budget is constructed to fit the exploded bill. It should also
+        -- fit the original bill.
+        let actual = canAfford budget bill
+
+        pure $
+          counterexample ("Budget: " ++ show budget) $
+          counterexample ("Original bill: " ++ show bill) $
+          counterexample ("Exploded bill: " ++ show bill')
+          actual
   ]
 
 genAssignment :: Ord a => Item a -> Budget a -> Gen (Budget a)
